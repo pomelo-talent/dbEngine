@@ -4,6 +4,9 @@ import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.file.Paths;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 /** This class implements the DB server. */
 public final class DBServer {
@@ -31,19 +34,6 @@ public final class DBServer {
    */
   public DBServer(File databaseDirectory) {
     // TODO implement your server logic here
-    /*
-    if ((databaseDirectory.isDirectory())) {
-      File[] documents = databaseDirectory.listFiles();
-      System.out.println("Files are:");
-
-      // Display the names of the documents
-      for (int i = 0; i < documents.length; i++) {
-          System.out.println(documents[i].getName());
-      }
-    }*/
-    //File fileToOpen = new File("people.tab");
-    //readFile(fileToOpen);
-    //storeFile(fileToOpen);
 
     directory = databaseDirectory;
     if (!directory.exists()) {
@@ -54,35 +44,10 @@ public final class DBServer {
   }
 
   public static File getDatabaseDirectory() {
+
     return directory;
   }
 
-  /*
-  public void readFile(File filename) {
-    try {
-      FileReader reader = new FileReader(filename);
-      BufferedReader buffReader = new BufferedReader(reader);
-      String line;
-      while ((line = buffReader.readLine()) != null) {
-        System.out.println(line);
-      }
-      System.out.println(line);
-      buffReader.close();
-    } catch (IOException e) {
-      System.out.println(e);
-    }
-  }
-
-  public void storeFile(File filename) {
-    try {
-      Table tableFromFile = new Table(filename);
-      //tableFromFile.printTable();
-    } catch (IOException e){
-      System.out.println(e);
-    }
-  }
-
-   */
 
   /**
    * KEEP this signature (i.e. {@code edu.uob.DBServer.handleCommand(String)}) otherwise we won't be
@@ -114,6 +79,23 @@ public final class DBServer {
     }
   }
 
+  class HandleSocket implements  Runnable {
+    private Socket socket;
+
+    public HandleSocket(Socket socket) {
+      this.socket = socket;
+    }
+
+    @Override
+    public void run() {
+      try {
+        blockingHandleConnection(socket);
+      } catch (IOException e) {
+        e.printStackTrace();
+      }
+
+    }
+  }
 
   //  === Methods below are there to facilitate server related operations. ===
 
@@ -130,10 +112,16 @@ public final class DBServer {
   public void blockingListenOn(int portNumber) throws IOException {
     try (ServerSocket s = new ServerSocket(portNumber)) {
       System.out.println("Server listening on port " + portNumber);
+      ThreadPoolExecutor tpe = new ThreadPoolExecutor(10, 20, 1L, TimeUnit.SECONDS, new ArrayBlockingQueue<>(100), new ThreadPoolExecutor.CallerRunsPolicy());
+
       while (!Thread.interrupted()) {
         try {
           //System.out.print("SQL:> ");
-          blockingHandleConnection(s);
+          //blockingHandleConnection(s);
+          Socket ss = s.accept();
+          Runnable worker = new HandleSocket(ss);
+          tpe.execute(worker);
+          System.out.println(tpe);
         } catch (IOException e) {
           System.err.println("Server encountered a non-fatal IO error:");
           e.printStackTrace();
@@ -149,15 +137,13 @@ public final class DBServer {
    * <p>This method isn't used for marking. You shouldn't have to modify this method, but you can if
    * * you want to.
    *
-   * @param serverSocket The client socket to read/write from.
-   * @throws IOException If any IO related operation fails.
    */
-  private void blockingHandleConnection(ServerSocket serverSocket) throws IOException {
-    try (Socket s = serverSocket.accept();
+  private void blockingHandleConnection(Socket s) throws IOException {
+    try (
         BufferedReader reader = new BufferedReader(new InputStreamReader(s.getInputStream()));
         BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(s.getOutputStream()))) {
       System.out.print("SQL:> ");
-      System.out.println("Connection established: " + serverSocket.getInetAddress());
+      //System.out.println("Connection established: " + serverSocket.getInetAddress());
       while (!Thread.interrupted()) {
         String incomingCommand = reader.readLine();
         System.out.println("Received message: " + incomingCommand);
